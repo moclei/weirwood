@@ -33,11 +33,11 @@ export class Porter {
     private handleMessage(tabId: number, message: any): void {
         if (message.type === 'setState') {
             console.log('handleMessage, setState');
-            this.stateManager.setState(message.state, tabId);
+            this.stateManager.set(message.state, tabId);
         }
         if (message.type === 'setInstanceState') {
             console.log('handleMessage, setInstanceState');
-            this.stateManager.setState(message.state, message.tabId);
+            this.stateManager.set(message.state, message.tabId);
         }
     }
 
@@ -46,7 +46,7 @@ export class Porter {
             this.ports[tabId].postMessage({
                 type: 'stateUpdate',
                 state: {
-                    ...this.stateManager.getState(tabId),
+                    ...this.stateManager.get(tabId),
                 }
             });
         } else {
