@@ -1,48 +1,25 @@
 {
-  "name": "weirwood",
+  "name": "weirwood-monorepo",
   "version": "1.0.0",
   "description": "skeleton for web extension",
   "main": "index.js",
   "repository": "https://github.com/moclei/weirwood.git",
   "author": "Marc O'Cleirigh",
   "license": "MIT",
-  "private": false,
+  "private": true,
+  "workspaces": [
+    "packages/weirwood",
+    "packages/examples/mtg"
+  ],
   "scripts": {
-    "ng": "ng",
-    "start": "ng serve",
-    "build": "ng build",
-    "watch": "ng build --watch --configuration development",
-    "test": "ng test",
-    "build-ext": "node ./build/build.mjs"
-  },
-  "dependencies": {
-    "@angular/animations": "^17.2.0",
-    "@angular/common": "^17.2.0",
-    "@angular/compiler": "^17.2.0",
-    "@angular/core": "^17.2.0",
-    "@angular/forms": "^17.2.0",
-    "@angular/platform-browser": "^17.2.0",
-    "@angular/platform-browser-dynamic": "^17.2.0",
-    "@angular/router": "^17.2.0",
-    "rxjs": "~7.8.0",
-    "tslib": "^2.3.0",
-    "zone.js": "~0.14.3"
+    "build": "lerna run build"
   },
   "devDependencies": {
-    "@angular-devkit/build-angular": "^17.2.3",
-    "@angular/cli": "^17.2.3",
-    "@angular/compiler-cli": "^17.2.0",
-    "@types/jasmine": "~5.1.0",
-    "jasmine-core": "~5.1.0",
-    "karma": "~6.4.0",
-    "karma-chrome-launcher": "~3.2.0",
-    "karma-coverage": "~2.2.0",
-    "karma-jasmine": "~5.1.0",
-    "karma-jasmine-html-reporter": "~2.1.0",
-    "typescript": "~5.3.2",
     "@types/webextension-polyfill": "^0.10.7",
-    "webextension-polyfill": "^0.10.0",
     "chokidar": "^3.5.3",
-    "esbuild": "^0.19.9"
+    "esbuild": "^0.19.9",
+    "lerna": "^8.1.2",
+    "typescript": "~5.3.2",
+    "webextension-polyfill": "^0.10.0"
   }
 }

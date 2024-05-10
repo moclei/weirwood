@@ -24,6 +24,9 @@
       "dom"
     ]
   },
+  "exclude": [
+    "packages/weirwood"
+  ],
   "angularCompilerOptions": {
     "enableI18nLegacyMessageIdFormat": false,
     "strictInjectionParameters": true,

@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "Weirwood",
+  "version": "1.1.3774",
+  "description": "A lense for viewing your pixels",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "type": "module",
+  "host_permissions": [
+    "*://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*/*"
+      ],
+      "js": [
+        "content.js"
+      ]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "images/*",
+        "index.html"
+      ],
+      "matches": [
+        "*://*/*"
+      ]
+    }
+  ],
+  "icons": {
+    "16": "images/lensor-icon-16.png",
+    "48": "images/lensor-icon-48.png",
+    "128": "images/lensor-icon-128.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "images/lensor-icon-16.png",
+      "48": "images/lensor-icon-48.png",
+      "128": "images/lensor-icon-128.png"
+    }
+  }
+}

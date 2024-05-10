@@ -1,0 +1,15 @@
+{
+  "name": "weirwood",
+  "version": "1.0.0",
+  "description": "skeleton for web extension",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "repository": "https://github.com/moclei/weirwood.git",
+  "author": "Marc O'Cleirigh",
+  "license": "MIT",
+  "private": false,
+  "scripts": {
+    "build:types": "tsc --emitDeclarationOnly --declaration --declarationDir ./dist --project ./tsconfig.json",
+    "build": "node ./build/build-weirwood.mjs && npm run build:types"
+  }
+}
