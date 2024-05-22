@@ -14,34 +14,44 @@ const entryPoints = [
 ];
 const assets = [srcDir + '/assets'];
 
-// Function to ensure directory exists
-const ensureDirExists = (dir) => {
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
-};
+await runAngularBuild();
+// Initial build
+build();
 
-const copyRecursiveSync = (src, dest) => {
-    const exists = fs.existsSync(src);
-    const stats = exists && fs.statSync(src);
-    const isDirectory = exists && stats.isDirectory();
-    if (isDirectory) {
-        fs.mkdirSync(dest, { recursive: true });
-        fs.readdirSync(src).forEach(childItemName => {
-            copyRecursiveSync(path.join(src, childItemName),
-                              path.join(dest, childItemName));
-        });
-    } else {
-        fs.copyFileSync(src, dest);
-    }
-};
+// Watch for file changes in src directory
+chokidar.watch(srcDir).on('change', (event, path) => {
+    console.log(`File ${path} has been changed`);
+    runAngularBuild().then(() => {
+        build();
+    });
+});
 
-const copyManifest = () => {
-    const destManifestPath = path.join(distDir, 'manifest.json');
-    fs.copyFileSync(manifestPath, destManifestPath);
-};
+function runAngularBuild() {
+    return new Promise((resolve, reject) => {
+      const ngBuild = spawn('ng', ['build']);
+  
+      ngBuild.stdout.on('data', (data) => {
+        console.log(`Angular build stdout: ${data}`);
+      });
+  
+      ngBuild.stderr.on('data', (data) => {
+        console.error(`Angular build stderr: ${data}`);
+      });
+  
+      ngBuild.on('close', (code) => {
+        if (code === 0) {
+          console.log('Angular build completed successfully');
+          resolve();
+        } else {
+          console.error(`Angular build process exited with code ${code}`);
+          reject();
+        }
+      });
+    });
+  }
 
-const build = () => {
+
+function build() {
     ensureDirExists(distDir);
     // Increment the minor version in manifest.json
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
@@ -78,38 +88,29 @@ const build = () => {
     copyManifest();
 };
 
-await runAngularBuild();
-// Initial build
-build();
 
-// Watch for file changes in src directory
-chokidar.watch(srcDir).on('change', (event, path) => {
-    console.log(`File ${path} has been changed`);
-    runAngularBuild().then(() => {
-        build();
-    });
-});
+function ensureDirExists(dir) {
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+};
 
-function runAngularBuild() {
-    return new Promise((resolve, reject) => {
-      const ngBuild = spawn('ng', ['build']);
-  
-      ngBuild.stdout.on('data', (data) => {
-        console.log(`Angular build stdout: ${data}`);
-      });
-  
-      ngBuild.stderr.on('data', (data) => {
-        console.error(`Angular build stderr: ${data}`);
-      });
-  
-      ngBuild.on('close', (code) => {
-        if (code === 0) {
-          console.log('Angular build completed successfully');
-          resolve();
-        } else {
-          console.error(`Angular build process exited with code ${code}`);
-          reject();
-        }
-      });
-    });
-  }
+function copyRecursiveSync(src, dest) {
+    const exists = fs.existsSync(src);
+    const stats = exists && fs.statSync(src);
+    const isDirectory = exists && stats.isDirectory();
+    if (isDirectory) {
+        fs.mkdirSync(dest, { recursive: true });
+        fs.readdirSync(src).forEach(childItemName => {
+            copyRecursiveSync(path.join(src, childItemName),
+                              path.join(dest, childItemName));
+        });
+    } else {
+        fs.copyFileSync(src, dest);
+    }
+};
+
+function copyManifest() {
+    const destManifestPath = path.join(distDir, 'manifest.json');
+    fs.copyFileSync(manifestPath, destManifestPath);
+};

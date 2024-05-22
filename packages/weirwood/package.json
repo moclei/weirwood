@@ -9,7 +9,7 @@
   "license": "MIT",
   "private": false,
   "scripts": {
-    "build:types": "tsc --emitDeclarationOnly --declaration --declarationDir ./dist --project ./tsconfig.json",
+    "build:types": "tsc --emitDeclarationOnly --declaration --declarationDir ./dist --project ./tsconfig.lib.json",
     "build": "node ./build/build-weirwood.mjs && npm run build:types"
   }
 }

@@ -24,6 +24,9 @@
       "dom"
     ]
   },
+  "include": [
+    "src/**/*.ts"
+  ],
   "exclude": [
     "packages/weirwood"
   ],

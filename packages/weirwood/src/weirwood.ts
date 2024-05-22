@@ -1,5 +1,5 @@
 import browser from 'webextension-polyfill';
-import { ConfigItem, DerivedInstanceState, DerivedState, DerivedWorkerState, StateSubscriber } from './model/weirwood.model';
+import { ConfigItem, DerivedInstanceState, DerivedState, DerivedWorkerState, StateSubscriber, WeirwoodConnect } from './model/weirwood.model';
 import { Porter } from './porter';
 
 export class Weirwood<TConfig extends Record<string, ConfigItem<any>>> {
@@ -8,24 +8,41 @@ export class Weirwood<TConfig extends Record<string, ConfigItem<any>>> {
     private instanceStates: { [tabId: number]: DerivedInstanceState<TConfig> };
     private workerState: DerivedWorkerState<TConfig>;
     private onStateChangeListeners: Array<(state: Partial<DerivedState<TConfig>>, tabId?: number) => void> = [];
+    private instanceConnectListener: (port: browser.Runtime.Port, instanceStates: { [tabId: number]: DerivedInstanceState<TConfig> }, workerState: DerivedWorkerState<TConfig>) => any = () => { };
+    private instanceDisconnectListener: (port: browser.Runtime.Port, instanceStates: { [tabId: number]: DerivedInstanceState<TConfig> }, workerState: DerivedWorkerState<TConfig>) => void = () => { };
     private STORAGE_PREFIX = 'ww_';
     private porter: Porter;
 
     constructor(private config: TConfig, storagePrefix?: string) {
+        console.log('Weirwood constructor called.');
         this.defaultInstanceState = this.instanceStates = this.initializeInstanceDefault();
         this.defaultWorkerState = this.workerState = this.initializeWorkerDefault();
         this.hydrate();
         this.porter = new Porter(this);
+        this.porter.onInstanceConnect(port => {
+            const context = this.instanceConnectListener(port, this.instanceStates, this.workerState);
+            const tabId = port.sender!.tab!.id!;
+            this.addInstance(tabId, context);
+            port.onDisconnect.addListener(() => {
+                this.removeInstance(tabId);
+                this.instanceDisconnectListener(port, this.instanceStates, this.workerState);
+            });
+        });
         if (storagePrefix) {
             this.STORAGE_PREFIX = storagePrefix;
         }
+        // Notify tabs of state changes
+        this.subscribe((changes) => {
+            console.log('State change detected. Broadcasting state update. changes: ', changes)
+            this.porter.broadcastStateUpdate(this.get());
+        });
     }
 
-    public get(): (DerivedWorkerState<TConfig>)
+    public get(): DerivedState<TConfig>
     public get(tabId: number): DerivedInstanceState<TConfig> & DerivedWorkerState<TConfig>;
-    public get(tabId?: number): (DerivedInstanceState<TConfig> | DerivedWorkerState<TConfig>) {
+    public get(tabId?: number): (DerivedInstanceState<TConfig> | DerivedState<TConfig>) {
         if (!tabId) {
-            return { ...this.workerState, ...{} as Partial<DerivedInstanceState<TConfig>> };
+            return { ...this.workerState, ...{} as DerivedInstanceState<TConfig> };
         }
         return { ...this.workerState, ...this.instanceStates[tabId] };
     }
@@ -33,6 +50,7 @@ export class Weirwood<TConfig extends Record<string, ConfigItem<any>>> {
     public async set(state: Partial<DerivedWorkerState<TConfig>>): Promise<void>
     public async set(state: Partial<DerivedInstanceState<TConfig> & DerivedWorkerState<TConfig>>, tabId: number): Promise<void>
     public async set(state: Partial<DerivedInstanceState<TConfig> | DerivedWorkerState<TConfig>>, tabId?: number): Promise<void> {
+        console.log("Weirwood.set, state: ", state, " tabId: ", tabId);
         const instance = {} as Partial<DerivedInstanceState<TConfig>>;
         const worker = {} as Partial<DerivedWorkerState<TConfig>>;
 
@@ -42,7 +60,7 @@ export class Weirwood<TConfig extends Record<string, ConfigItem<any>>> {
                 const instanceKey = key as keyof DerivedInstanceState<TConfig>;
                 const instanceState = state as Partial<DerivedInstanceState<TConfig>>;
                 instance[instanceKey] = instanceState[instanceKey];
-            } else if (item.partition === 'worker') {
+            } else if (!item.partition || item.partition === 'worker') {
                 const workerKey = key as keyof DerivedWorkerState<TConfig>;
                 const workerState = state as Partial<DerivedWorkerState<TConfig>>;
                 worker[workerKey] = workerState[workerKey]!;
@@ -53,15 +71,17 @@ export class Weirwood<TConfig extends Record<string, ConfigItem<any>>> {
     }
 
     public async setWorkerState(state: Partial<DerivedWorkerState<TConfig>>): Promise<void> {
+        console.log('setWorkerState, update: ', state);
         const update = { ...this.workerState, ...state };
         if (!this.deepEqual(this.workerState, update)) {
             this.workerState = update;
-            await this.persist();
+            await this.persist(state);
             this.notify(state as Partial<DerivedState<TConfig>>);
         }
     }
 
     public async setInstanceState(tabId: number, state: Partial<DerivedInstanceState<TConfig>>): Promise<void> {
+        console.log('setInstanceState');
         const update = { ...this.defaultInstanceState, ...this.instanceStates[tabId], ...state };
         if (!this.deepEqual(this.instanceStates[tabId], update)) {
             this.instanceStates[tabId] = update;
@@ -90,8 +110,25 @@ export class Weirwood<TConfig extends Record<string, ConfigItem<any>>> {
             if (context) {
                 initialInstanceState.context = { ...context };
             }
+            console.log("Adding tab. new instance state: ", initialInstanceState);
             this.instanceStates[tabId] = initialInstanceState;
         }
+    }
+
+    public onInstanceConnect(handler: (
+        port: browser.Runtime.Port,
+        instances: { [tabId: number]: DerivedInstanceState<TConfig> },
+        workerState: DerivedWorkerState<TConfig>) => any,
+    ): any {
+        this.instanceConnectListener = handler;
+    }
+
+    public onInstanceDisconnect(handler: (
+        port: browser.Runtime.Port,
+        instances: { [tabId: number]: DerivedInstanceState<TConfig> },
+        workerState: DerivedWorkerState<TConfig>) => any,
+    ): void {
+        this.instanceDisconnectListener = handler;
     }
 
     public async removeInstance(tabId: number): Promise<void> {
@@ -100,11 +137,14 @@ export class Weirwood<TConfig extends Record<string, ConfigItem<any>>> {
         }
     }
 
-    private async persist(): Promise<void> {
-        for (const key in this.workerState) {
+    // If we pass in specific state to persist, it only persists that state. 
+    // Otherwise persists all of the worker state.
+    private async persist(state?: Partial<DerivedWorkerState<TConfig>>): Promise<void> {
+        for (const key in (state || this.workerState)) {
             const item = this.config[key] as ConfigItem<any>;
             const persistence = item.persistance || 'none';
-            const value = this.workerState[key];
+            const value = state ? state[key] : this.workerState[key];
+            console.log("Persisting: ", key, value, " persistence: ", persistence);
             switch (persistence) {
                 case 'session':
                     await browser.storage.session.set({ [this.STORAGE_PREFIX + (key as string)]: value });
@@ -119,8 +159,10 @@ export class Weirwood<TConfig extends Record<string, ConfigItem<any>>> {
     }
 
     private async hydrate(): Promise<void> {
+        console.log('Hydrating');
         const local = await browser.storage.local.get(null);
         const session = await browser.storage.session.get(null);
+        console.log('session: ', session);
         const combined = { ...local, ...session };
         const update: Partial<DerivedWorkerState<TConfig>> = {}; // Cast update as Partial<DerivedState<TConfig>>
         for (const prefixedKey in combined) {
@@ -134,6 +176,7 @@ export class Weirwood<TConfig extends Record<string, ConfigItem<any>>> {
     }
 
     public getDefaultStates(): DerivedInstanceState<TConfig> & DerivedWorkerState<TConfig> {
+        console.log('Getting default states.');
         return { ...this.defaultWorkerState, ...this.defaultInstanceState };
     }
 
@@ -157,14 +200,6 @@ export class Weirwood<TConfig extends Record<string, ConfigItem<any>>> {
             }
         });
         return workerState;
-    }
-
-    private isInstanceState(state: Partial<DerivedInstanceState<TConfig> | DerivedWorkerState<TConfig>>): state is Partial<DerivedInstanceState<TConfig>> {
-        return (state as Partial<DerivedInstanceState<TConfig>>).context !== undefined;
-    }
-
-    private isWorkerState(state: Partial<DerivedInstanceState<TConfig> | DerivedWorkerState<TConfig>>): state is Partial<DerivedWorkerState<TConfig>> {
-        return (state as Partial<DerivedInstanceState<TConfig>>).context === undefined;
     }
 
     private removePrefix(key: string): string {
@@ -199,7 +234,8 @@ export function create<TConfig extends Record<string, ConfigItem<any>>>(config: 
     return new Weirwood(config, storagePrefix);
 }
 
-export function connect<TConfig extends Record<string, ConfigItem<any>>>(config: TConfig): { get: () => DerivedState<TConfig>; set: (newState: Partial<DerivedState<TConfig>>) => void; subscribe: (key: keyof TConfig, callback: StateSubscriber) => number; unsubscribe: (id: number) => void; } {
+export function connect<TConfig extends Record<string, ConfigItem<any>>>(config: TConfig, context?: string): WeirwoodConnect<TConfig> {
+    console.log("Weirewood connect called from context: ", context);
     // If we're connecting from a content script or app, call browser.runtime.connect
     const port = browser.runtime.connect({ name: 'weirwood' });
     let _state = getDerivedState(config);
@@ -208,12 +244,12 @@ export function connect<TConfig extends Record<string, ConfigItem<any>>>(config:
     let listenerId = 0;
     port.onMessage.addListener(message => {
         if (message.type === 'stateUpdate') {
-            console.log('stateUpdate received');
-            changes = message.payload.state;
+            console.log('stateUpdate received, message: ', message);
+            changes = message.state;
             _state = { ..._state, ...changes };
 
             listeners.forEach(listener => {
-                if (changes && Object.keys(changes).includes(String(listener.key))) {
+                if (changes && (listener.key === undefined || Object.keys(changes).includes(String(listener.key)))) {
                     listener.callback(changes);
                 }
             });
@@ -222,16 +258,18 @@ export function connect<TConfig extends Record<string, ConfigItem<any>>>(config:
 
     const get = () => _state;
     const set = (newState: Partial<DerivedState<TConfig>>) => {
+        console.log('weirwood connect set called.');
+        // console.log('weirwood connect set called. port: ', port.sender!.tab!.id!);
         port.postMessage({ type: 'setState', payload: { state: newState } });
     }
-    const subscribe = (key: keyof DerivedState<TConfig>, callback: StateSubscriber): number => {
+    const subscribe = (callback: (changes: Partial<DerivedState<TConfig>>) => void, key?: keyof DerivedState<TConfig>): number => {
         listeners.set(++listenerId, { key, callback });
         return listenerId;
     }
     const unsubscribe = (id: number) => {
         listeners.delete(id);
     }
-    return { get, set, subscribe, unsubscribe };
+    return { get, set, subscribe, unsubscribe, port };
 }
 
 function getDerivedState<TConfig extends Record<string, ConfigItem<any>>>(config: TConfig): DerivedState<TConfig> {
@@ -254,62 +292,3 @@ function getDerivedState<TConfig extends Record<string, ConfigItem<any>>>(config
 
     return { ...instanceState, ...workerState } as DerivedState<TConfig>;
 }
-// export function useState(): [
-//     () => DerivedWorkerState<TConfig>,
-//     (newState: Partial<DerivedWorkerState<TConfig>>) => Promise<void>,
-//     (tabId: number) => DerivedInstanceState<TConfig>,
-//     (tabId: number, newState: Partial<DerivedInstanceState<TConfig>>) => Promise<void>,
-// ] {
-//     if (!stateInstance) {
-//         stateInstance = createWeirwood({});
-//     }
-//     if (!portManagerInstance) {
-//         portManagerInstance = new Porter(stateInstance);
-//         browser.runtime.onConnect.addListener(port => {
-//             if (port.name === 'weirwood') {
-//                 portManagerInstance!.addPort(port);
-//             }
-//         });
-//     }
-
-//     const getState = () => stateInstance!.getWorkerState();
-//     const setState = (newState: Partial<DerivedWorkerState<TConfig>>) => stateInstance!.setWorkerState(newState);
-//     const getInstanceState = (tabId: number) => stateInstance!.getInstanceState(tabId);
-//     const setInstanceState = (tabId: number, newState: Partial<DerivedInstanceState<TConfig>>) => stateInstance!.setInstanceState(tabId, newState);
-
-//     return [getState, setState, getInstanceState, setInstanceState]
-// }
-
-// import { create } from 'weirwood';
-
-const config = {
-    name: {
-        default: 'John Doe',
-        partition: 'instance' as 'instance',
-    },
-    numbers: {
-        default: 123,
-        partition: 'worker' as 'worker', // partition needs to be explicitly set. Should default to 'worker'
-    }
-};
-
-
-// Usage in background script
-
-const myStore = create(config);
-
-myStore.subscribe((state) => {
-    console.log(state.name);
-});
-
-myStore.set({ numbers: 123 });
-const { numbers: nums } = myStore.get(); // Doesn't complain if you don't pass tabId
-const tabId = 123;
-
-const { numbers: nums2 } = myStore.get(tabId);
-myStore.set({ name: 'John Doe' }, tabId);
-
-// Usage in content script
-
-// const myCSStore = connect();
-

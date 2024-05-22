@@ -2,32 +2,49 @@ import browser from 'webextension-polyfill';
 import { Weirwood } from './weirwood';
 
 export class Porter {
-    private ports: { [tabId: number]: browser.Runtime.Port } = {};
+    private ports: { [tabId: number]: { [frameId: number]: browser.Runtime.Port } } = {};
+    private onInstanceConnectListener: (port: browser.Runtime.Port) => void = () => { };
+    private instanceDisconnectListener: (port: browser.Runtime.Port) => void = () => { };
 
     constructor(private stateManager: Weirwood<any>) {
-        // this.stateManager.onStateChange((state: any) => {
-        //     this.broadcastStateUpdate(state);
-        // });
         browser.runtime.onConnect.addListener(port => {
             if (port.name === 'weirwood') {
+                console.log("Porter, heard port connect to weirwood. port tabId: ", port.sender!.tab!.id!);
                 this.addPort(port);
-                // send initial state?
+                this.sendStateUpdate(port.sender!.tab!.id!,)
             }
         });
     }
 
     private addPort(port: browser.Runtime.Port): void {
+        console.log("Porter, adding port: ", port);
         const tabId = port.sender!.tab!.id!;
-        const tabUrl = port.sender!.tab!.url!;
-        this.ports[tabId] = port;
-        this.stateManager.addInstance(tabId, { tabUrl, tabId, initialized: new Date().getTime().toString() });
+        const frameId = port.sender!.frameId!;
+        if (!!this.ports[tabId] && this.ports[tabId].hasOwnProperty(frameId)) {
+            console.log('Porter, tabId already exists. Ignoring add request.');
+            return;
+        }
+        if (!this.ports[tabId]) {
+            this.ports[tabId] = { [frameId]: port };
+        } else {
+            this.ports[tabId][frameId] = port;
+        }
+        console.log("Porter, added port. Ports: ", this.ports);
         port.onMessage.addListener(message => this.handleMessage(tabId, message));
         port.onDisconnect.addListener(() => {
             console.log('Ports disconnected. tabId: ', tabId);
             delete this.ports[tabId];
-            this.stateManager.removeInstance(tabId);
+            this.instanceDisconnectListener(port);
         });
-        this.sendStateUpdate(tabId);
+        this.onInstanceConnectListener(port);
+    }
+
+    public onInstanceConnect(handler: (port: browser.Runtime.Port) => void): void {
+        this.onInstanceConnectListener = handler;
+    }
+
+    public onInstanceDisconnect(handler: (port: browser.Runtime.Port) => void): void {
+        this.instanceDisconnectListener = handler;
     }
 
     private handleMessage(tabId: number, message: any): void {
@@ -43,12 +60,21 @@ export class Porter {
 
     private sendStateUpdate(tabId: number): void {
         if (this.ports[tabId]) {
-            this.ports[tabId].postMessage({
-                type: 'stateUpdate',
-                state: {
-                    ...this.stateManager.get(tabId),
-                }
+            console.log('sendStateUpdate: tab', tabId, ' state: ', this.stateManager.get(tabId));
+            Object.keys(this.ports[tabId]).forEach(frameId => {
+                this.ports[tabId][Number(frameId)].postMessage({
+                    type: 'stateUpdate',
+                    state: {
+                        ...this.stateManager.get(tabId),
+                    }
+                });
             });
+            // this.ports[tabId].postMessage({
+            //     type: 'stateUpdate',
+            //     state: {
+            //         ...this.stateManager.get(tabId),
+            //     }
+            // });
         } else {
             console.log('sendStateUpdate: No port for tabId: ', tabId, ' yet.');
         }

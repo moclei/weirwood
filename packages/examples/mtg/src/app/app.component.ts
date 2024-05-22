@@ -27,9 +27,11 @@ export class AppComponent {
 
   constructor(private StateService: StateService) {
     this.StateService.stateChange$.subscribe((state) => {
-      this.connectedNum = state.stats.active;
-      this.openInstances = state.stats.open;
       console.log("App component, state: ", state);
+      if (state.stats) {
+        this.connectedNum = state.stats.active;
+        this.openInstances = state.stats.open;
+      }
     })
   }
 }

@@ -2,7 +2,8 @@ import { CommonModule } from '@angular/common';
 import { Input } from '@angular/core';
 import { Component } from '@angular/core';
 import { StateService } from '../../services/app-state.service';
-import { Instance } from '../../../models/app.state';
+import { DerivedInstanceState } from 'weirwood/dist/model/weirwood.model';
+import { StateConfig } from '../../../web-ext/weirwood/config';
 
 
 @Component({
@@ -14,14 +15,14 @@ import { Instance } from '../../../models/app.state';
 })
 
 export class InstanceBoxComponent {
-  @Input() instance: Instance | null = null;
+  @Input() instance: DerivedInstanceState<typeof StateConfig> | null = null;
 
-  constructor(private StateService: StateService) {
+  constructor(private state: StateService) {
   }
 
   handleClick() {
     console.log('InstanceBoxComponent clicked');
     if (!this.instance) return;
-    this.StateService.setInstanceState({ isOpen: !this.instance.isOpen }, this.instance.tabId);
+    // this.state.send({ isOpen: !this.instance.isOpen });
   }
 }

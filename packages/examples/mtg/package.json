@@ -10,7 +10,7 @@
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
-    "build": "ng build && npm run build-ext",
+    "build": "npm run build-ext",
     "build-ext": "node ./build/build.mjs",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"

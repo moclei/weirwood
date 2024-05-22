@@ -14,6 +14,7 @@ export class FetchService {
   }
 
   public sendFetchRequest(request: FetchRequest) {
+    console.log('FetchService, sendFetchRequest: ', request);
     this.fetchPort.postMessage(request);
   }
 }

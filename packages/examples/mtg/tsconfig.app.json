@@ -9,6 +9,7 @@
     "src/main.ts"
   ],
   "include": [
+    "src/web-ext/performance.d.ts",
     "src/**/*.d.ts"
   ]
 }

@@ -1,4 +1,6 @@
 import browser from 'webextension-polyfill';
+import { State, StateUpdate, connect } from 'weirwood';
+import { StateConfig } from './weirwood/config';
 
 const BORDER_COLOR = 'rgb(87, 102, 111)';
 const APP_WIDTH = 350;
@@ -23,6 +25,7 @@ const state: LensorState = {
 }
 
 function createMainCanvas() {
+    console.log("createMainCanvas called.");
     const container = document.createElement('div');
     container.style.zIndex = '2147483647';
     container.style.display = 'block';
@@ -48,34 +51,23 @@ function createMainCanvas() {
     state.container.appendChild(state.frame);
     document.body.appendChild(state.container);
 
-    state.myPort = browser.runtime.connect({ name: 'stateSyncChannel' });
-
-    state.myPort.onMessage.addListener(message => {
-        if (message.type === 'stateUpdate') {
-            // iframe.contentWindow!.postMessage(message, '*');
-            console.log('MOC stateUpdate', message);
-            if (message.state.ports) {
-                console.log('MOC stateUpdate, we had ports');
-                message.state.ports.forEach((port: any) => {
-                    console.log('MOC stateUpdate, comparing to myTabId: ', state.myTabId, ' and port.tabId: ', port.tabId);
-                    if (port.tabId === state.myTabId) {
-                        console.log('MOC matching port! opening');
-                        state.open = port.isOpen;
-                        if (state.open) {
-                            state.container!.style.visibility = 'visible';
-                        } else {
-                            state.container!.style.visibility = 'hidden';
-                        }
-                    }
-                });
-            }
+    const { subscribe, port } = connect(StateConfig, "Content script");
+    state.myPort = port;
+    subscribe((changes: StateUpdate<typeof StateConfig>) => {
+        if (changes.isOpen === undefined) return; // Todo: Typescript should know that if we subscribe to isOpen, it will not be undefined.
+        state.open = changes.isOpen;
+        if (changes.isOpen) {
+            state.container!.style.visibility = 'visible';
+        } else {
+            state.container!.style.visibility = 'hidden';
         }
-    });
+    }, 'isOpen');
 }
 
 browser.runtime.onMessage.addListener((message, sender) => {
     if (message.type === 'toggleApp') {
-        console.log('toggleApp heard. sending open state to background.');
+        if (self === top) { createMainCanvas(); }
+        console.log('toggleApp heard. sending open state to background. state');
         state.open = !state.open;
         state.myPort!.postMessage({ type: 'setState', state: { isOpen: state.open } });
         if (state.open) {
@@ -86,4 +78,4 @@ browser.runtime.onMessage.addListener((message, sender) => {
     }
 });
 
-if (self === top) { createMainCanvas(); }
+
